@@ -98,30 +98,36 @@ resource "tailor_auth_idp_config" "oidc_local" {
 
 ### Function Runtime Integration
 
-You can access Secret Manager values from Function Runtime using the built-in `tailor.secretmanager` API:
+You can access Secret Manager values from Function Runtime using the built-in `tailor.secretmanager` API.
+Use secret values only for in-process operations such as initializing a client or calling a downstream service, and avoid logging or returning the raw values.
 
 ```js {{ title: 'function_example.js' }}
 export default async () => {
   console.log("start");
 
   // Get multiple secrets from a vault
-  let secrets = await tailor.secretmanager.getSecrets("default", [
+  const secrets = await tailor.secretmanager.getSecrets("default", [
     "test-secret-1",
     "test-secret-2",
   ]);
-  let jsonSecrets = JSON.stringify(secrets);
-  console.log(`getSecrets: ${jsonSecrets}`);
-  // output:
-  // getSecrets: {"test-secret-1":"secret-value-1","test-secret-2":"secret-value-2"}
+
+  // Validate that the required secrets are available without exposing their values
+  if (!secrets["test-secret-1"] || !secrets["test-secret-2"]) {
+    throw new Error("required secrets are missing");
+  }
 
   // Get a single secret
-  let secret = await tailor.secretmanager.getSecret("default", "test-secret-1");
-  console.log(`getSecret with test-secret-1: ${secret}`);
-  // output:
-  // getSecret with test-secret-1: secret-value-1
+  const secret = await tailor.secretmanager.getSecret("default", "test-secret-1");
 
+  if (!secret) {
+    throw new Error("required secret is missing");
+  }
+
+  // Use the secret in process only. Do not log or return the raw value.
   return {
-    secrets: jsonSecrets,
+    ok: true,
+    retrievedSecretCount: Object.keys(secrets).length,
+    primarySecretLoaded: true,
   };
 };
 ```
@@ -141,7 +147,7 @@ Secret values are write-only when using Terraform. Once stored, they cannot be r
 
 - Secrets are encrypted at rest and in transit
 - Access to secrets is controlled through workspace permissions
-- Secret values are never exposed in logs or configuration files
+- Avoid exposing secret values in logs, API responses, or configuration files
 - Use descriptive names for secrets to make them easily identifiable
 - Regularly rotate sensitive credentials and update secret values accordingly
 
